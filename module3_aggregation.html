@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Численное агрегирование</title>
+    <script src="vendor/tailwindcss.js"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background-color: #f3f4f6; }
+        .iter-card { animation: fadeIn 0.35s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .num { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body class="p-8 text-gray-800">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex items-center gap-4 mb-6">
+            <a href="index.html" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold border border-indigo-200 rounded-lg px-3 py-2 hover:bg-indigo-50 transition bg-white" title="К списку модулей">← Все модули</a>
+            <h1 class="text-3xl font-bold text-gray-900">Численное агрегирование ранжировок</h1>
+        </div>
+
+        <!-- Всплывающее уведомление -->
+        <div id="toast" class="hidden fixed top-6 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 text-sm font-semibold px-5 py-3 rounded-full shadow-lg border border-red-300 z-50"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Панель ввода -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
+                <h2 class="text-xl font-bold mb-4">Мнения экспертов</h2>
+                <p class="text-sm text-gray-500 mb-4">
+                    Ранжировки от меньшего приоритета к большему.<br>
+                    Равные приоритеты — в фигурных скобках: <code class="bg-gray-100 px-1 rounded">A, {B, C}, D</code>
+                </p>
+
+                <div class="flex items-center gap-2 mb-4">
+                    <label class="text-sm font-bold">Количество экспертов:</label>
+                    <input type="number" id="expert-count" value="4" min="2" max="12" class="border rounded p-1.5 w-20 text-sm font-mono">
+                    <button onclick="buildInputs(true); initCalculation();" class="bg-gray-100 hover:bg-gray-200 border border-gray-300 text-sm font-semibold py-1.5 px-3 rounded transition">
+                        Применить
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-3 mb-4 text-sm">
+                    <span class="font-bold">Начальные веса:</span>
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="weightMode" value="equal" checked> Равные (1/m)</label>
+                    <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="weightMode" value="manual"> Вручную</label>
+                </div>
+
+                <div class="space-y-3" id="inputs-container"></div>
+
+                <div class="mt-4">
+                    <label class="text-sm font-bold mr-2">Точность остановки ε:</label>
+                    <input type="number" id="epsilon" value="0.001" step="0.0001" min="0.000001" class="border rounded p-1 w-28 font-mono text-sm">
+                    <p class="text-xs text-gray-400 mt-1">Итерации прекращаются, когда max |w′ − w| &lt; ε</p>
+                </div>
+
+                <div class="mt-6 flex flex-col gap-2">
+                    <button onclick="initCalculation()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow transition">
+                        ⟲ Построить матрицу заново
+                    </button>
+                    <button id="nextIterBtn" onclick="nextIteration()" disabled class="bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg shadow transition">
+                        Следующая итерация →
+                    </button>
+                    <button id="autoBtn" onclick="autoRun()" disabled class="bg-indigo-400 hover:bg-indigo-500 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg shadow transition">
+                        ⏩ Проиграть до конца
+                    </button>
+                </div>
+
+                <div class="mt-5 text-xs text-gray-500 bg-gray-50 border rounded-lg p-3 space-y-1">
+                    <p><b>Алгоритм:</b></p>
+                    <p>1. Канонические ранги → нормированные оценки x<sub>ij</sub> = r<sub>ij</sub> / Σ<sub>j</sub> r<sub>ij</sub></p>
+                    <p>2. Групповые оценки g<sub>j</sub> = Σ<sub>i</sub> w<sub>i</sub>·x<sub>ij</sub></p>
+                    <p>3. Расхождения ρ<sub>i</sub> = Σ<sub>j</sub> |x<sub>ij</sub> − g<sub>j</sub>|</p>
+                    <p>4. Нормирующая сумма N = Σ<sub>i</sub> 1/ρ<sub>i</sub></p>
+                    <p>5. Новые веса w′<sub>i</sub> = (1/ρ<sub>i</sub>) / N</p>
+                </div>
+            </div>
+
+            <!-- Панель результатов -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Матрица нормированных оценок -->
+                <div id="matrix-block" class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hidden">
+                    <h2 class="text-xl font-bold mb-3">Матрица нормированных оценок x<sub>ij</sub></h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left border-collapse">
+                            <thead class="bg-gray-50" id="matrix-head"></thead>
+                            <tbody id="matrix-body" class="divide-y"></tbody>
+                        </table>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2" id="init-weights-note"></p>
+                </div>
+
+                <!-- Итерации -->
+                <div id="iterations"></div>
+
+                <!-- Итог -->
+                <div id="final-block" class="hidden bg-indigo-50 p-6 rounded-xl shadow-sm border-2 border-indigo-300">
+                    <h2 class="text-xl font-bold text-indigo-900 mb-3">✔ Условие остановки выполнено. Итог:</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h3 class="font-bold text-indigo-800 mb-2">Итоговые веса экспертов</h3>
+                            <div id="final-weights" class="space-y-1 text-sm"></div>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-indigo-800 mb-2">Порядок проектов (по возрастанию групповой оценки)</h3>
+                            <div id="final-order" class="flex flex-wrap items-center gap-1"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const defaultInputs = [
+            "A, {B, C}, D",
+            "A, B, C, D",
+            "{A, B}, C, D",
+            "B, A, {C, D}"
+        ];
+
+        // Генерация полей ввода. keepValues=true сохраняет уже введенные ранжировки.
+        function buildInputs(keepValues) {
+            const container = document.getElementById('inputs-container');
+            const prev = keepValues ? Array.from(container.querySelectorAll('input[type="text"]')).map(el => el.value) : [];
+            let count = parseInt(document.getElementById('expert-count').value);
+            if (isNaN(count) || count < 2) count = 2;
+            if (count > 12) count = 12;
+            document.getElementById('expert-count').value = count;
+
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const val = prev[i] !== undefined ? prev[i] : defaultInputs[i % defaultInputs.length];
+                container.innerHTML += `
+                    <div class="flex items-center">
+                        <span class="w-10 font-bold text-gray-600">E${i+1}</span>
+                        <input type="text" id="exp-${i}" value="${val}" class="flex-1 border border-gray-300 rounded p-2 focus:outline-none focus:border-indigo-500 font-mono text-sm">
+                        <input type="number" id="w-${i}" step="0.01" min="0" value="1" title="Начальный вес эксперта E${i+1}" class="weight-input hidden w-20 ml-2 border border-gray-300 rounded p-2 font-mono text-sm">
+                    </div>
+                `;
+            }
+            toggleWeightInputs();
+        }
+        buildInputs(false);
+
+        // Показ/скрытие полей ручных весов
+        function toggleWeightInputs() {
+            const manual = document.querySelector('input[name="weightMode"]:checked').value === 'manual';
+            document.querySelectorAll('.weight-input').forEach(el => el.classList.toggle('hidden', !manual));
+        }
+        document.querySelectorAll('input[name="weightMode"]').forEach(r => {
+            r.addEventListener('change', () => { toggleWeightInputs(); initCalculation(); });
+        });
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 3500);
+        }
+
+        const fmt = (x) => Number(x).toFixed(4);
+
+        // Парсер: "от меньшего к большему", связанные ранги усредняются
+        function parseRanking(str) {
+            str = str.replace(/\s+/g, '').toUpperCase();
+            const regex = /\{[^}]+\}|[^,{}]+/g;
+            const matches = str.match(regex);
+            let ranks = {};
+            let currentRank = 1;
+            if (!matches) return ranks;
+
+            matches.forEach(m => {
+                let cluster = m.startsWith('{') ? m.slice(1, -1).split(',').filter(x => x) : [m];
+                const size = cluster.length;
+                const avgRank = (currentRank * 2 + size - 1) / 2;
+                cluster.forEach(p => { ranks[p] = avgRank; });
+                currentRank += size;
+            });
+            return ranks;
+        }
+
+        // Состояние расчета
+        let state = null;
+
+        function initCalculation() {
+            const m = document.querySelectorAll('#inputs-container input[type="text"]').length;
+            let expertRanks = [];
+            let allProjectsSet = new Set();
+
+            for (let i = 0; i < m; i++) {
+                const ranks = parseRanking(document.getElementById(`exp-${i}`).value);
+                if (Object.keys(ranks).length === 0) {
+                    showToast(`Пустая или некорректная ранжировка у эксперта E${i+1}!`);
+                    return;
+                }
+                expertRanks.push(ranks);
+                Object.keys(ranks).forEach(p => allProjectsSet.add(p));
+            }
+
+            const projects = Array.from(allProjectsSet).sort();
+            const n = projects.length;
+            if (n < 2) { showToast('Нужно минимум 2 различных проекта!'); return; }
+
+            // Нормированные оценки x_ij = r_ij / Σ_j r_ij
+            let X = [];
+            for (let i = 0; i < m; i++) {
+                let row = {};
+                let sumR = 0;
+                projects.forEach(p => { sumR += expertRanks[i][p] || 0; });
+                projects.forEach(p => { row[p] = (expertRanks[i][p] || 0) / sumR; });
+                X.push(row);
+            }
+
+            // Начальные веса: равные или ручные (нормируются к сумме 1)
+            let weights;
+            const weightMode = document.querySelector('input[name="weightMode"]:checked').value;
+            if (weightMode === 'manual') {
+                const raw = [];
+                for (let i = 0; i < m; i++) raw.push(parseFloat(document.getElementById(`w-${i}`).value));
+                if (raw.some(v => isNaN(v) || v < 0)) {
+                    showToast('Проверьте веса: нужны неотрицательные числа!');
+                    return;
+                }
+                const sumW = raw.reduce((a, b) => a + b, 0);
+                if (sumW <= 0) {
+                    showToast('Сумма весов должна быть больше нуля!');
+                    return;
+                }
+                weights = raw.map(v => v / sumW);
+            } else {
+                weights = new Array(m).fill(1 / m);
+            }
+
+            state = {
+                m, n, projects, X,
+                weights,
+                iteration: 0,
+                done: false
+            };
+
+            // Отрисовка матрицы
+            let thHTML = `<th class="p-2 border">Эксперт</th>`;
+            projects.forEach(p => thHTML += `<th class="p-2 border text-center">${p}</th>`);
+            thHTML += `<th class="p-2 border text-center bg-gray-100">wᵢ</th>`;
+            document.getElementById('matrix-head').innerHTML = `<tr>${thHTML}</tr>`;
+
+            let tbodyHTML = '';
+            for (let i = 0; i < m; i++) {
+                tbodyHTML += `<tr><td class="p-2 border font-bold">E${i+1}</td>`;
+                projects.forEach(p => {
+                    tbodyHTML += `<td class="p-2 border text-center num">${fmt(X[i][p])}</td>`;
+                });
+                tbodyHTML += `<td class="p-2 border text-center num bg-gray-50" id="w-cell-${i}">${fmt(state.weights[i])}</td></tr>`;
+            }
+            document.getElementById('matrix-body').innerHTML = tbodyHTML;
+
+            document.getElementById('matrix-block').classList.remove('hidden');
+            document.getElementById('init-weights-note').innerHTML = weightMode === 'manual'
+                ? `Начальные веса заданы вручную и нормированы к сумме 1: ${weights.map(w => w.toFixed(4)).join(', ')}`
+                : `Начальные веса экспертов равны: w<sub>i</sub> = 1/m = ${(1/m).toFixed(4)}`;
+            document.getElementById('iterations').innerHTML = '';
+            document.getElementById('final-block').classList.add('hidden');
+            document.getElementById('nextIterBtn').disabled = false;
+            document.getElementById('autoBtn').disabled = false;
+        }
+
+        // Автоматический прогон итераций до условия остановки
+        function autoRun() {
+            if (!state || state.done) return;
+            document.getElementById('nextIterBtn').disabled = true;
+            document.getElementById('autoBtn').disabled = true;
+            const step = () => {
+                if (!state.done) {
+                    nextIteration();
+                    setTimeout(step, 250);
+                }
+            };
+            step();
+        }
+
+        function nextIteration() {
+            if (!state || state.done) return;
+            const { m, projects, X } = state;
+            const w = state.weights;
+            const k = state.iteration + 1;
+
+            // Групповые оценки g_j
+            let g = {};
+            projects.forEach(p => {
+                g[p] = 0;
+                for (let i = 0; i < m; i++) g[p] += w[i] * X[i][p];
+            });
+
+            // Расхождения ρ_i
+            let rho = [];
+            for (let i = 0; i < m; i++) {
+                rho[i] = 0;
+                projects.forEach(p => { rho[i] += Math.abs(X[i][p] - g[p]); });
+            }
+
+            // Нормирующая сумма N = Σ 1/ρ_i
+            let invRho = rho.map(r => r < 1e-12 ? 1e12 : 1 / r);
+            let N = invRho.reduce((a, b) => a + b, 0);
+
+            // Новые веса
+            let newW = invRho.map(v => v / N);
+
+            // Проверка остановки
+            let maxDelta = 0;
+            for (let i = 0; i < m; i++) maxDelta = Math.max(maxDelta, Math.abs(newW[i] - w[i]));
+            const eps = parseFloat(document.getElementById('epsilon').value) || 0.001;
+            const stop = maxDelta < eps;
+
+            // Отрисовка карточки итерации
+            const card = document.createElement('div');
+            card.className = 'iter-card bg-white p-6 rounded-xl shadow-sm border border-gray-200';
+
+            let gCells = projects.map(p => `<td class="p-2 border text-center num">${fmt(g[p])}</td>`).join('');
+            let gHead = projects.map(p => `<th class="p-2 border text-center">${p}</th>`).join('');
+
+            let wRows = '';
+            for (let i = 0; i < m; i++) {
+                wRows += `<tr>
+                    <td class="p-2 border font-bold">E${i+1}</td>
+                    <td class="p-2 border text-center num">${fmt(rho[i])}</td>
+                    <td class="p-2 border text-center num">${rho[i] < 1e-12 ? '∞' : fmt(1/rho[i])}</td>
+                    <td class="p-2 border text-center num text-indigo-700 font-bold">${fmt(newW[i])}</td>
+                    <td class="p-2 border text-center num text-gray-500">${fmt(Math.abs(newW[i]-w[i]))}</td>
+                </tr>`;
+            }
+
+            card.innerHTML = `
+                <h3 class="text-lg font-bold mb-3 text-gray-800">Итерация ${k}</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm font-bold text-gray-600 mb-1">Групповые оценки g<sub>j</sub> = Σ wᵢ·x<sub>ij</sub></p>
+                        <table class="w-full text-sm border-collapse">
+                            <thead class="bg-gray-50"><tr>${gHead}</tr></thead>
+                            <tbody><tr>${gCells}</tr></tbody>
+                        </table>
+                        <p class="text-sm font-bold text-gray-600 mt-3">Нормирующая сумма:</p>
+                        <p class="text-lg font-bold num text-indigo-700">N = Σ 1/ρᵢ = ${N > 1e10 ? '∞' : fmt(N)}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-bold text-gray-600 mb-1">Расхождения и обновление весов</p>
+                        <table class="w-full text-sm border-collapse">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="p-2 border">Эксперт</th>
+                                    <th class="p-2 border text-center">ρᵢ</th>
+                                    <th class="p-2 border text-center">1/ρᵢ</th>
+                                    <th class="p-2 border text-center">w′ᵢ</th>
+                                    <th class="p-2 border text-center">|Δw|</th>
+                                </tr>
+                            </thead>
+                            <tbody>${wRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">max |Δw| = ${fmt(maxDelta)} ${stop ? `< ε = ${eps} — <b class="text-indigo-700">остановка</b>` : `≥ ε = ${eps} — продолжаем`}</p>
+            `;
+            document.getElementById('iterations').appendChild(card);
+            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            // Применяем новые веса
+            state.weights = newW;
+            state.iteration = k;
+            for (let i = 0; i < m; i++) {
+                const cell = document.getElementById(`w-cell-${i}`);
+                if (cell) cell.innerText = fmt(newW[i]);
+            }
+
+            if (stop || k >= 100) {
+                state.done = true;
+                document.getElementById('nextIterBtn').disabled = true;
+                document.getElementById('autoBtn').disabled = true;
+                showFinal();
+            }
+        }
+
+        function showFinal() {
+            const { m, projects, X, weights } = state;
+
+            // Финальные групповые оценки
+            let g = {};
+            projects.forEach(p => {
+                g[p] = 0;
+                for (let i = 0; i < state.m; i++) g[p] += weights[i] * X[i][p];
+            });
+
+            const sorted = [...projects].sort((a, b) => g[a] - g[b]);
+
+            let wHTML = '';
+            for (let i = 0; i < state.m; i++) {
+                wHTML += `<div class="flex justify-between bg-white rounded border border-indigo-200 px-3 py-1.5">
+                    <span class="font-bold">E${i+1}</span>
+                    <span class="num font-bold text-indigo-700">${fmt(weights[i])}</span>
+                </div>`;
+            }
+            document.getElementById('final-weights').innerHTML = wHTML;
+
+            let oHTML = '';
+            sorted.forEach((p, idx) => {
+                oHTML += `<div class="bg-white border-2 border-indigo-400 rounded-lg px-3 py-1.5 font-bold text-lg" title="g(${p}) = ${fmt(g[p])}">${p}</div>`;
+                if (idx < sorted.length - 1) oHTML += `<div class="text-indigo-600 font-bold text-xl">➔</div>`;
+            });
+            document.getElementById('final-order').innerHTML = oHTML;
+
+            document.getElementById('final-block').classList.remove('hidden');
+            document.getElementById('final-block').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Авто-построение матрицы при загрузке
+        setTimeout(initCalculation, 300);
+    </script>
+</body>
+</html>

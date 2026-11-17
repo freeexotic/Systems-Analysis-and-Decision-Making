@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тренажеры по системному анализу</title>
+    <script src="vendor/tailwindcss.js"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background-color: #f3f4f6; }
+        .module-card { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+        .module-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px -8px rgba(0,0,0,0.15); }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800">
+    <header class="bg-white shadow-sm">
+        <div class="max-w-6xl mx-auto px-8 py-8">
+            <h1 class="text-4xl font-bold text-gray-900">Системный анализ</h1>
+            <p class="text-lg text-gray-500 mt-2">Интерактивные тренажеры</p>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-8 py-10">
+        <div id="modules-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Карточки генерируются из массива MODULES ниже -->
+        </div>
+    </main>
+
+    <footer class="max-w-6xl mx-auto px-8 pb-10 text-sm text-gray-400">
+        Интерактивные тренажеры по дисциплине «Системный анализ».
+        <div class="mt-1">Выполнила: Варвара Стахняк</div>
+    </footer>
+
+    <script>
+        // ===== РЕЕСТР МОДУЛЕЙ =====
+        // Чтобы добавить модуль, допишите сюда объект:
+        // { file, title, description, features: [...] }
+        const MODULES = [
+            {
+                file: 'module1_entropy.html',
+                title: 'Оценка сложности системы',
+                description: 'Граф системы, онтология отношений (мини-OWL), логический ризонер и энтропийная мера сложности H(M,R).',
+                features: [
+                    'Интерактивный редактор графа (ABox) с авто/ручной нумерацией узлов',
+                    'Редактор аксиом (TBox): inverseOf, TransitiveProperty, propertyChainAxiom',
+                    'Ризонер прямого вывода: таблица парных отношений r1–r5',
+                    'Автоматический расчет энтропии H(M,R) с точностью до 0,1'
+                ]
+            },
+            {
+                file: 'module2_concordance.html',
+                title: 'Кластерная ранжировка',
+                description: 'Анализ согласованности экспертов: кластерная ранжировка, ядро противоречий, коэффициент конкордации Канделла.',
+                features: [
+                    'Ввод ранжировок с фигурными скобками: A, {B, C}, D',
+                    'Ядро противоречий через компоненты сильной связности',
+                    'Коэффициент Канделла W с поправкой на связанные ранги',
+                    'Статистика χ² и вывод о гипотезе при заданном уровне значимости'
+                ]
+            },
+            {
+                file: 'module3_aggregation.html',
+                title: 'Численное агрегирование',
+                description: 'Пошаговый симулятор итерационного агрегирования ранжировок с пересчетом весов экспертов.',
+                features: [
+                    'Матрица нормированных оценок проектов',
+                    'Кнопка «Следующая итерация»: групповые оценки, нормирующая сумма, новые веса',
+                    'Настраиваемая точность остановки ε',
+                    'Итоговые веса и строгий порядок проектов'
+                ]
+            }
+        ];
+
+        const grid = document.getElementById('modules-grid');
+        MODULES.forEach(mod => {
+            const card = document.createElement('a');
+            card.href = mod.file;
+            card.className = 'module-card flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden';
+            card.innerHTML = `
+                <div class="p-6 flex-1">
+                    <h2 class="text-xl font-bold text-gray-900 mb-2">${mod.title}</h2>
+                    <p class="text-sm text-gray-500 mb-4">${mod.description}</p>
+                    <ul class="text-xs text-gray-600 space-y-1.5">
+                        ${mod.features.map(f => `<li class="flex gap-2"><span class="text-indigo-500 font-bold">•</span><span>${f}</span></li>`).join('')}
+                    </ul>
+                </div>
+                <div class="px-6 py-3 bg-gray-50 border-t border-gray-100 text-sm font-semibold text-indigo-600">
+                    Открыть модуль →
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    </script>
+</body>
+</html>

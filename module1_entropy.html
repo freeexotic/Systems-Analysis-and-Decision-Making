@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оценка сложности системы</title>
+    <!-- Подключение Tailwind CSS для стилизации -->
+    <script src="vendor/tailwindcss.js"></script>
+    <!-- Подключение Vis.js для работы с графами -->
+    <script src="vendor/vis-network.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        /* Контейнер для графа */
+        #mynetwork {
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        /* Стилизация скроллбара */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <!-- Заголовок -->
+    <header class="bg-white shadow-sm py-4 px-6 flex justify-between items-center z-10">
+        <div class="flex items-center gap-4">
+            <a href="index.html" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold border border-indigo-200 rounded-lg px-3 py-2 hover:bg-indigo-50 transition" title="К списку модулей">← Все модули</a>
+            <div>
+                <h1 class="text-xl font-bold text-indigo-700">Оценка сложности системы</h1>
+                <p class="text-xs text-gray-500 mt-1">Визуализатор графов, онтологический ризонер и расчет структурной энтропии H(M,R)</p>
+            </div>
+        </div>
+        <button onclick="calculate()" class="bg-indigo-600 hover:bg-indigo-700 transition-colors text-white font-semibold py-2 px-6 rounded-lg shadow-md flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Вычислить отношения
+        </button>
+    </header>
+
+    <!-- Основной контент (3 колонки) -->
+    <main class="flex-1 flex flex-col lg:flex-row gap-4 p-4 overflow-hidden">
+        
+        <!-- Колонка 1: Граф (ABox) -->
+        <section class="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <h2 class="font-semibold text-gray-700">1. Схема системы (ABox)</h2>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <!-- Панель управления узлами (Авто / Ручной) -->
+                    <div class="flex items-center border border-gray-200 rounded p-1 bg-white shadow-sm gap-2">
+                        <div class="flex items-center gap-2 px-1 text-xs text-gray-600">
+                            <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="nodeMode" value="auto" checked> Авто</label>
+                            <label class="cursor-pointer flex items-center gap-1"><input type="radio" name="nodeMode" value="manual"> Ручной</label>
+                        </div>
+                        <input type="text" id="manualNodeId" class="hidden w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded focus:outline-none focus:border-indigo-500" placeholder="Имя">
+                        <button id="addNodeBtn" class="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold py-1 px-2 rounded transition">
+                            + Узел
+                        </button>
+                    </div>
+                    <button id="addEdgeBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-sm py-1.5 px-3 rounded shadow-sm transition">
+                        + Связь (r1)
+                    </button>
+                    <button id="deleteBtn" class="bg-white border border-red-300 text-red-600 hover:bg-red-50 text-sm py-1.5 px-3 rounded shadow-sm transition" title="Удалить выделенный элемент">
+                        Удалить
+                    </button>
+                    <button id="exportAboxBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-sm py-1.5 px-3 rounded shadow-sm transition" title="Показать текстовое описание графа (ABox)">
+                        Экспорт ABox
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 p-2 relative">
+                <div id="mynetwork"></div>
+                <!-- Уведомления поверх графа -->
+                <div id="edgeModeNotice" class="hidden absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 text-xs px-3 py-1 rounded-full shadow border border-blue-200">
+                    Режим связывания: кликните на узел и потяните к другому
+                </div>
+                <div id="errorNotice" class="hidden absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 text-xs px-3 py-1 rounded-full shadow border border-red-200 z-20 transition-opacity duration-300">
+                </div>
+            </div>
+        </section>
+
+        <!-- Колонка 2: Правила (TBox) -->
+        <section class="w-full lg:w-1/4 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                <div>
+                    <h2 class="font-semibold text-gray-700">2. Онтология (TBox)</h2>
+                    <p class="text-xs text-gray-500 mt-1">Редактируемые правила (мини-OWL)</p>
+                </div>
+                <button id="resetRulesBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-xs py-1 px-2 rounded shadow-sm transition" title="Вернуть правила по умолчанию">Сбросить</button>
+            </div>
+            <div class="flex-1 p-4 flex flex-col">
+                <textarea id="rulesText" class="w-full flex-1 p-3 text-sm font-mono bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white resize-none shadow-inner transition-colors" spellcheck="false">
+:r2 owl:inverseOf :r1 .
+:ancestorOf a owl:TransitiveProperty .
+:r1 rdfs:subPropertyOf :ancestorOf .
+:r3 owl:propertyChainAxiom ( :r1 :ancestorOf ) .
+:r4 owl:inverseOf :r3 .
+:r5 owl:propertyChainAxiom ( :r2 :r1 ) .
+                </textarea>
+                <div id="rulesStatus" class="mt-2 text-xs"></div>
+                <div class="mt-3 text-xs text-gray-500 space-y-1">
+                    <p><b>Синтаксис ризонера:</b></p>
+                    <ul class="list-disc pl-4">
+                        <li><code>inverseOf</code> — обратное свойство</li>
+                        <li><code>TransitiveProperty</code> — транзитивность</li>
+                        <li><code>propertyChainAxiom</code> — цепочка свойств</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Колонка 3: Результаты -->
+        <section class="w-full lg:w-1/3 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-4 border-b border-gray-100 bg-gray-50">
+                <h2 class="font-semibold text-gray-700">3. Результаты анализа</h2>
+            </div>
+            
+            <!-- Расчет энтропии -->
+            <div class="p-4 bg-indigo-50 border-b border-indigo-100">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <h3 class="text-sm font-semibold text-indigo-900">Структурная энтропия H(M,R)</h3>
+                    <span id="reasonerBadge" class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500" title="Источник вывода отношений">—</span>
+                </div>
+                <div class="flex items-end gap-2">
+                    <span id="entropyValue" class="text-3xl font-bold text-indigo-700">0.0</span>
+                    <span class="text-sm text-indigo-500 mb-1 pl-1">бит</span>
+                </div>
+                <div id="entropyDetails" class="text-xs text-indigo-600 mt-2">
+                    Ожидание вычислений...
+                </div>
+                <div id="lijTableWrap" class="mt-3 overflow-x-auto"></div>
+            </div>
+
+            <!-- Таблица отношений -->
+            <div class="flex-1 overflow-y-auto p-0">
+                <table class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-white shadow-sm ring-1 ring-gray-200">
+                        <tr>
+                            <th class="py-2 px-4 text-xs font-semibold text-gray-600 border-b">Субъект (x)</th>
+                            <th class="py-2 px-4 text-xs font-semibold text-gray-600 border-b">Отношение (P)</th>
+                            <th class="py-2 px-4 text-xs font-semibold text-gray-600 border-b">Объект (y)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTable" class="text-sm divide-y divide-gray-100">
+                        <tr>
+                            <td colspan="3" class="py-4 text-center text-gray-400">Нажмите "Вычислить отношения"</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Модальное окно экспорта ABox -->
+    <div id="aboxModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl w-[36rem] max-w-[92vw] p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-1">Экспорт ABox (мини-Turtle)</h3>
+            <p class="text-xs text-gray-500 mb-3">Текстовое описание графа: компоненты системы и исходные отношения r1.</p>
+            <textarea id="aboxText" readonly class="w-full h-64 p-3 font-mono text-xs bg-gray-50 border border-gray-300 rounded-lg resize-none focus:outline-none" spellcheck="false"></textarea>
+            <div class="flex justify-end gap-2 mt-4">
+                <button id="copyAboxBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 px-4 rounded-lg transition">Копировать</button>
+                <button id="closeAboxBtn" class="bg-white border border-gray-300 hover:bg-gray-100 text-sm font-semibold py-2 px-4 rounded-lg transition">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. НАСТРОЙКА VIS.JS (ГРАФ) ---
+        const nodes = new vis.DataSet([
+            { id: 'm1', label: 'm1' },
+            { id: 'm2', label: 'm2' },
+            { id: 'm3', label: 'm3' },
+            { id: 'm4', label: 'm4' },
+            { id: 'm5', label: 'm5' }
+        ]);
+
+        const edges = new vis.DataSet([
+            { from: 'm1', to: 'm2', label: 'r1', font: {align: 'middle'} },
+            { from: 'm1', to: 'm3', label: 'r1', font: {align: 'middle'} },
+            { from: 'm3', to: 'm4', label: 'r1', font: {align: 'middle'} },
+            { from: 'm3', to: 'm5', label: 'r1', font: {align: 'middle'} }
+        ]);
+
+        const container = document.getElementById('mynetwork');
+        const data = { nodes: nodes, edges: edges };
+        const options = {
+            nodes: {
+                shape: 'circle',
+                size: 25,
+                color: { background: '#e0e7ff', border: '#4f46e5', highlight: { background: '#c7d2fe', border: '#4338ca' } },
+                font: { color: '#312e81', size: 16, bold: { color: '#312e81', size: 16 } },
+                borderWidth: 2
+            },
+            edges: {
+                arrows: 'to',
+                color: { color: '#6b7280', highlight: '#4f46e5' },
+                smooth: { type: 'continuous' },
+                width: 2,
+                font: { size: 14, align: 'middle', color: '#111827', strokeWidth: 3, strokeColor: '#ffffff' }
+            },
+            physics: {
+                stabilization: true,
+                barnesHut: { springLength: 150 }
+            },
+            manipulation: {
+                enabled: false, // Мы используем кастомные кнопки
+                addEdge: function (edgeData, callback) {
+                    if (edgeData.from !== edgeData.to) {
+                        edgeData.label = 'r1';
+                        edgeData.font = {align: 'middle'};
+                        callback(edgeData);
+                    }
+                    document.getElementById('edgeModeNotice').classList.add('hidden');
+                }
+            }
+        };
+        const network = new vis.Network(container, data, options);
+
+        // --- УПРАВЛЕНИЕ РЕЖИМАМИ ДОБАВЛЕНИЯ УЗЛОВ ---
+        const modeRadios = document.querySelectorAll('input[name="nodeMode"]');
+        const manualInput = document.getElementById('manualNodeId');
+        const errorNotice = document.getElementById('errorNotice');
+
+        function showError(msg) {
+            errorNotice.textContent = msg;
+            errorNotice.classList.remove('hidden');
+            setTimeout(() => errorNotice.classList.add('hidden'), 3000);
+        }
+
+        modeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'manual') {
+                    manualInput.classList.remove('hidden');
+                    manualInput.focus();
+                } else {
+                    manualInput.classList.add('hidden');
+                    errorNotice.classList.add('hidden'); // прячем ошибку при смене режима
+                }
+            });
+        });
+
+        // Обработчики кнопок графа
+        document.getElementById('addNodeBtn').addEventListener('click', () => {
+            const mode = document.querySelector('input[name="nodeMode"]:checked').value;
+            let newId = '';
+
+            if (mode === 'auto') {
+                // Ищем минимальный свободный номер узла, игнорируя нечисловые суффиксы
+                const existingIds = nodes.getIds().map(id => parseInt(String(id).replace('m', ''))).filter(n => !isNaN(n));
+                let nextIdNum = 1;
+                while(existingIds.includes(nextIdNum)) {
+                    nextIdNum++;
+                }
+                newId = `m${nextIdNum}`;
+            } else {
+                // Ручной режим
+                newId = manualInput.value.trim();
+                if (!newId) {
+                    showError('Введите имя узла!');
+                    return;
+                }
+                if (nodes.get(newId)) {
+                    showError('Узел с таким именем уже существует!');
+                    return;
+                }
+                manualInput.value = ''; // очищаем поле после успешного добавления
+            }
+
+            nodes.add({ id: newId, label: newId });
+        });
+
+        document.getElementById('addEdgeBtn').addEventListener('click', () => {
+            network.addEdgeMode();
+            document.getElementById('edgeModeNotice').classList.remove('hidden');
+        });
+
+        document.getElementById('deleteBtn').addEventListener('click', () => {
+            network.deleteSelected();
+        });
+
+        // Правила по умолчанию для сброса
+        const defaultRules = `:r2 owl:inverseOf :r1 .\n:ancestorOf a owl:TransitiveProperty .\n:r1 rdfs:subPropertyOf :ancestorOf .\n:r3 owl:propertyChainAxiom ( :r1 :ancestorOf ) .\n:r4 owl:inverseOf :r3 .\n:r5 owl:propertyChainAxiom ( :r2 :r1 ) .`;
+        
+        document.getElementById('resetRulesBtn').addEventListener('click', () => {
+            document.getElementById('rulesText').value = defaultRules;
+            validateAndShowRules();
+            calculate();
+        });
+
+        // --- 2А. ВАЛИДАЦИЯ СИНТАКСИСА АКСИОМ ---
+        const rulePatterns = [
+            { re: /^:\w+\s+owl:inverseOf\s+:\w+\s*\.$/, hint: 'Формат: :свойство owl:inverseOf :свойство .' },
+            { re: /^:\w+\s+a\s+owl:TransitiveProperty\s*\.$/, hint: 'Формат: :свойство a owl:TransitiveProperty .' },
+            { re: /^:\w+\s+rdfs:subPropertyOf\s+:\w+\s*\.$/, hint: 'Формат: :свойство rdfs:subPropertyOf :свойство .' },
+            { re: /^:\w+\s+owl:propertyChainAxiom\s*\(\s*:\w+\s+:\w+\s*\)\s*\.$/, hint: 'Формат: :свойство owl:propertyChainAxiom ( :p1 :p2 ) .' }
+        ];
+
+        function validateRules(text) {
+            const errors = [];
+            text.split('\n').forEach((raw, idx) => {
+                const line = raw.trim();
+                if (!line || line.startsWith('#') || line.startsWith('@prefix')) return;
+                const ok = rulePatterns.some(p => p.re.test(line));
+                if (!ok) {
+                    let hint = 'Неизвестная конструкция. Поддерживаются: inverseOf, TransitiveProperty, subPropertyOf, propertyChainAxiom.';
+                    if (!line.endsWith('.')) hint = 'Ожидается точка «.» в конце записи.';
+                    else if (line.includes('inverseOf')) hint = rulePatterns[0].hint;
+                    else if (line.includes('TransitiveProperty')) hint = rulePatterns[1].hint;
+                    else if (line.includes('subPropertyOf')) hint = rulePatterns[2].hint;
+                    else if (line.includes('propertyChainAxiom')) hint = rulePatterns[3].hint;
+                    errors.push({ line: idx + 1, text: line, msg: hint });
+                }
+            });
+            return errors;
+        }
+
+        function validateAndShowRules() {
+            const text = document.getElementById('rulesText').value;
+            const errors = validateRules(text);
+            const statusEl = document.getElementById('rulesStatus');
+
+            if (errors.length === 0) {
+                statusEl.innerHTML = `<div class="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <span class="font-bold">✔</span><span>Синтаксис аксиом корректен</span>
+                </div>`;
+            } else {
+                statusEl.innerHTML = `<div class="text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+                    <p class="font-bold">✘ Найдены ошибки (${errors.length}). Эти строки будут проигнорированы ризонером:</p>
+                    ${errors.map(e => `<p class="font-mono">Строка ${e.line}: <span class="bg-red-100 px-1 rounded">${e.text.length > 40 ? e.text.slice(0, 40) + '…' : e.text}</span><br><span class="font-sans text-red-600">→ ${e.msg}</span></p>`).join('')}
+                </div>`;
+            }
+            return errors.length === 0;
+        }
+
+        document.getElementById('rulesText').addEventListener('input', () => {
+            validateAndShowRules();
+            scheduleRecalc();
+        });
+
+        // --- 2Б. ЭКСПОРТ ABOX В ТЕКСТОВЫЙ ВИД ---
+        function buildAboxText() {
+            const nodeIds = nodes.getIds().slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+            let out = '@prefix : <https://system-analysis.local/graph#> .\n\n';
+            out += `# Компоненты системы (M, |M| = ${nodeIds.length})\n`;
+            nodeIds.forEach(id => { out += `:${id} a :Element .\n`; });
+            out += `\n# Исходные отношения r1 (непосредственное управление)\n`;
+            edges.get().forEach(e => {
+                if (e.label) out += `:${e.from} :${e.label} :${e.to} .\n`;
+            });
+            return out;
+        }
+
+        document.getElementById('exportAboxBtn').addEventListener('click', () => {
+            document.getElementById('aboxText').value = buildAboxText();
+            document.getElementById('aboxModal').classList.remove('hidden');
+        });
+        document.getElementById('closeAboxBtn').addEventListener('click', () => {
+            document.getElementById('aboxModal').classList.add('hidden');
+        });
+        document.getElementById('aboxModal').addEventListener('click', (e) => {
+            if (e.target.id === 'aboxModal') e.target.classList.add('hidden');
+        });
+        document.getElementById('copyAboxBtn').addEventListener('click', () => {
+            const ta = document.getElementById('aboxText');
+            ta.select();
+            try { document.execCommand('copy'); } catch (err) { /* выделение остаётся, можно скопировать вручную */ }
+            document.getElementById('copyAboxBtn').innerText = 'Скопировано ✔';
+            setTimeout(() => document.getElementById('copyAboxBtn').innerText = 'Копировать', 1500);
+        });
+
+
+        // --- 2. МИНИ-РИЗОНЕР И ПАРСЕР ПРАВИЛ ---
+        function parseRules(text) {
+            const rules = { sub: [], inv: [], trans: [], chain: [] };
+            const lines = text.split('\n');
+            
+            lines.forEach(line => {
+                // Парсинг subPropertyOf
+                let matchSub = line.match(/:(\w+)\s+rdfs:subPropertyOf\s+:(\w+)/);
+                if (matchSub) rules.sub.push([matchSub[1], matchSub[2]]);
+
+                // Парсинг inverseOf
+                let matchInv = line.match(/:(\w+)\s+owl:inverseOf\s+:(\w+)/);
+                if (matchInv) rules.inv.push([matchInv[2], matchInv[1]]); // [base, inverse]
+
+                // Парсинг TransitiveProperty
+                let matchTrans = line.match(/:(\w+)\s+a\s+owl:TransitiveProperty/);
+                if (matchTrans) rules.trans.push(matchTrans[1]);
+
+                // Парсинг propertyChainAxiom
+                let matchChain = line.match(/:(\w+)\s+.*owl:propertyChainAxiom\s*\(\s*:(\w+)\s+:(\w+)\s*\)/);
+                if (matchChain) rules.chain.push({ res: matchChain[1], p1: matchChain[2], p2: matchChain[3] });
+            });
+            return rules;
+        }
+
+        function runInference(baseFacts, rules) {
+            let facts = new Set(baseFacts);
+            let changed = true;
+
+            const addFact = (s, p, o) => {
+                // Исключаем петли для r5 (общий руководитель) как указано в ТЗ
+                if (p === 'r5' && s === o) return false; 
+                
+                let str = `${s}|${p}|${o}`;
+                if (!facts.has(str)) {
+                    facts.add(str);
+                    return true;
+                }
+                return false;
+            };
+
+            // Алгоритм прямого вывода (Forward Chaining)
+            while (changed) {
+                changed = false;
+                let currentFacts = Array.from(facts).map(f => f.split('|'));
+                
+                for (let i = 0; i < currentFacts.length; i++) {
+                    let [s1, p1, o1] = currentFacts[i];
+                    
+                    // 1. subPropertyOf
+                    for (let [base, sub] of rules.sub) {
+                        if (p1 === base) changed = addFact(s1, sub, o1) || changed;
+                    }
+                    
+                    // 2. inverseOf
+                    for (let [base, inv] of rules.inv) {
+                        if (p1 === base) changed = addFact(o1, inv, s1) || changed;
+                        if (p1 === inv) changed = addFact(o1, base, s1) || changed; // Двусторонне
+                    }
+
+                    // Сопоставление с другими фактами для цепочек и транзитивности
+                    for (let j = 0; j < currentFacts.length; j++) {
+                        let [s2, p2, o2] = currentFacts[j];
+                        
+                        // Если объект первого факта равен субъекту второго (x -> y и y -> z)
+                        if (o1 === s2) {
+                            // 3. TransitiveProperty
+                            for (let transProp of rules.trans) {
+                                if (p1 === transProp && p2 === transProp) {
+                                    changed = addFact(s1, transProp, o2) || changed;
+                                }
+                            }
+                            
+                            // 4. propertyChainAxiom
+                            for (let chain of rules.chain) {
+                                if (p1 === chain.p1 && p2 === chain.p2) {
+                                    changed = addFact(s1, chain.res, o2) || changed;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return Array.from(facts).map(f => f.split('|'));
+        }
+
+
+        // --- Сериализация онтологии в Turtle для бэкенда (owlrl) ---
+        const MEASURE_RELATIONS = ['r1', 'r2', 'r3', 'r4', 'r5'];
+
+        function buildTurtle(baseFacts, rulesText) {
+            const nodeSet = new Set();
+            baseFacts.forEach(f => { const [s, , o] = f.split('|'); nodeSet.add(s); nodeSet.add(o); });
+            let out = '';
+            [...MEASURE_RELATIONS, 'ancestorOf'].forEach(p => { out += `:${p} a owl:ObjectProperty .\n`; });
+            out += ':Element a owl:Class .\n';
+            nodeSet.forEach(id => { out += `:${id} a :Element .\n`; });
+            out += '\n' + rulesText.trim() + '\n\n';
+            baseFacts.forEach(f => { const [s, p, o] = f.split('|'); out += `:${s} :${p} :${o} .\n`; });
+            return out;
+        }
+
+        function backendRelationsToFacts(relations) {
+            const facts = [];
+            Object.entries(relations || {}).forEach(([rel, pairs]) => {
+                (pairs || []).forEach(([s, o]) => facts.push([s, rel, o]));
+            });
+            return facts;
+        }
+
+        function setReasonerBadge(source) {
+            const el = document.getElementById('reasonerBadge');
+            if (!el) return;
+            if (source === 'backend') {
+                el.textContent = 'OWL 2 RL · owlrl';
+                el.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700';
+            } else {
+                el.textContent = 'встроенный (JS)';
+                el.className = 'text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500';
+            }
+        }
+
+        // --- 3. ГЛАВНАЯ ФУНКЦИЯ РАСЧЕТА И ВЫВОДА ---
+        let calcToken = 0;
+        window.calculate = async function() {
+            const myToken = ++calcToken;
+
+            // Считываем правила
+            const rulesText = document.getElementById('rulesText').value;
+            const rules = parseRules(rulesText);
+
+            // Считываем факты из графа (только ребра с label)
+            let baseFacts = [];
+            edges.get().forEach(e => {
+                if(e.label) baseFacts.push(`${e.from}|${e.label}|${e.to}`);
+            });
+
+            // 1. Пробуем сторонний OWL 2 RL ризонер (бэкенд owlrl).
+            //    Сервер не запущен / страница открыта через file:// → тихий откат на встроенный JS.
+            let inferredFacts = null;
+            let reasonerSource = 'local';
+            try {
+                const resp = await fetch('/reason', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ turtle: buildTurtle(baseFacts, rulesText), mode: 'rl' })
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (myToken !== calcToken) return; // устаревший ответ
+                    inferredFacts = backendRelationsToFacts(data.relations);
+                    reasonerSource = 'backend';
+                }
+            } catch (e) {
+                /* сервер недоступен — работаем локально */
+            }
+            if (myToken !== calcToken) return;
+
+            // 2. Фолбэк: встроенный forward-chaining ризонер (только r1..r5)
+            if (!inferredFacts) {
+                inferredFacts = runInference(baseFacts, rules).filter(([, p]) => MEASURE_RELATIONS.includes(p));
+                reasonerSource = 'local';
+            }
+            setReasonerBadge(reasonerSource);
+
+            // Сортируем для красоты (по субъекту, затем по отношению)
+            inferredFacts.sort((a, b) => {
+                if(a[0] !== b[0]) return a[0].localeCompare(b[0]);
+                if(a[1] !== b[1]) return a[1].localeCompare(b[1]);
+                return a[2].localeCompare(b[2]);
+            });
+
+            // --- Расчет энтропии H(M,R) (по пример_расчета_структурной_сложности.pdf) ---
+            const nodeIds = nodes.getIds();
+            const n = nodeIds.length;
+
+            // l_ij — число исходящих связей типа r_i от узла m_j
+            let outgoing = {};
+            inferredFacts.forEach(([s, p]) => {
+                if (MEASURE_RELATIONS.includes(p)) {
+                    const key = `${s}|${p}`;
+                    outgoing[key] = (outgoing[key] || 0) + 1;
+                }
+            });
+
+            // H(M,R) = -Σ_j Σ_i P_ij·log2(P_ij),  P_ij = l_ij/(n-1)
+            let entropy = 0;
+            let perNodeParts = [];
+            if (n > 1) {
+                nodeIds.forEach(nodeId => {
+                    let contrib = 0;
+                    let rels = [];
+                    MEASURE_RELATIONS.forEach(rel => {
+                        const l = outgoing[`${nodeId}|${rel}`] || 0;
+                        if (l === 0) return;
+                        const P = l / (n - 1);
+                        const h = -P * Math.log2(P);
+                        contrib += h;
+                        rels.push(`${rel}:${l}`);
+                    });
+                    if (contrib > 0) {
+                        entropy += contrib;
+                        perNodeParts.push(`${nodeId}=${contrib.toFixed(2)}`);
+                    }
+                });
+            }
+
+            // Нормированная сложность h(M,R) = H / H_ref,  H_ref = c·n·k,  c = 1/(e·ln2) ≈ 0.5307
+            const k = MEASURE_RELATIONS.length;
+            const c = 1 / (Math.E * Math.LN2);
+            const Href = c * n * k;
+            const hNorm = (n > 0 && Href > 0) ? entropy / Href : 0;
+
+            // Вывод энтропии
+            document.getElementById('entropyValue').innerText = entropy.toFixed(1);
+            document.getElementById('entropyDetails').innerHTML = n > 1
+                ? `h(M,R) = H / H<sub>ref</sub> = ${entropy.toFixed(1)} / (${c.toFixed(4)}·${n}·${k}) ≈ <b>${hNorm.toFixed(2)}</b>`
+                : 'Нет узлов для расчета.';
+
+            // Таблица исходящих связей l_ij (аналог Таблицы 1 из примера)
+            let lijHead = `<tr><th class="px-2 py-1 text-left text-[11px] font-semibold">Элемент</th>`;
+            MEASURE_RELATIONS.forEach(r => lijHead += `<th class="px-2 py-1 text-center text-[11px] font-semibold">${r}</th>`);
+            lijHead += `<th class="px-2 py-1 text-center text-[11px] font-semibold">ΣH</th></tr>`;
+
+            let lijRows = '';
+            nodeIds.forEach(nodeId => {
+                let sum = 0;
+                lijRows += `<tr><td class="px-2 py-0.5 font-mono text-[11px]">${nodeId}</td>`;
+                MEASURE_RELATIONS.forEach(rel => {
+                    const l = outgoing[`${nodeId}|${rel}`] || 0;
+                    lijRows += `<td class="px-2 py-0.5 text-center font-mono text-[11px] ${l ? '' : 'text-gray-300'}">${l || '·'}</td>`;
+                    if (l > 0 && n > 1) sum += -(l / (n - 1)) * Math.log2(l / (n - 1));
+                });
+                lijRows += `<td class="px-2 py-0.5 text-center font-mono text-[11px]">${sum ? sum.toFixed(2) : ''}</td></tr>`;
+            });
+
+            document.getElementById('lijTableWrap').innerHTML = n > 1
+                ? `<div class="text-[11px] text-indigo-700 mb-1">Исходящие связи l<sub>ij</sub> (P = l/${n - 1})</div>` +
+                  `<table class="w-full text-left border-collapse bg-white/70 rounded">` +
+                  `<thead class="border-b border-indigo-200">${lijHead}</thead>` +
+                  `<tbody>${lijRows}</tbody></table>`
+                : '';
+
+            // Вывод таблицы
+            const tbody = document.getElementById('resultsTable');
+            tbody.innerHTML = '';
+            
+            if (inferredFacts.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-gray-400">Граф пуст</td></tr>`;
+                return;
+            }
+
+            inferredFacts.forEach(([s, p, o]) => {
+                const tr = document.createElement('tr');
+                // Подсвечиваем цветом разные отношения
+                let pColor = p === 'r1' ? 'text-indigo-600 font-medium' : 
+                             p === 'ancestorOf' ? 'text-gray-400' : 'text-emerald-600';
+                
+                tr.innerHTML = `
+                    <td class="py-1.5 px-4 font-mono">${s}</td>
+                    <td class="py-1.5 px-4 font-mono ${pColor}">${p}</td>
+                    <td class="py-1.5 px-4 font-mono">${o}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+        
+        // Авто-запуск при загрузке для наглядности
+        validateAndShowRules();
+        setTimeout(calculate, 500);
+
+        // Живой пересчет при любом изменении графа (узлы/связи)
+        let recalcTimer = null;
+        function scheduleRecalc() {
+            clearTimeout(recalcTimer);
+            recalcTimer = setTimeout(calculate, 150);
+        }
+        nodes.on('*', scheduleRecalc);
+        edges.on('*', scheduleRecalc);
+
+    </script>
+</body>
+</html>
